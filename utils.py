@@ -22,7 +22,7 @@ def parse_config(f):
 
 
 
-def getData(DATA):
+def getData(DATA, batches = {'train': None, 'val': None, 'test':None}):
     dataset = PyGLinkPropPredDataset(name=DATA, root="datasets")
     g = np.load('DATA/{}/ext_full.npz'.format(DATA))
     
@@ -42,8 +42,8 @@ def getData(DATA):
     neg_sampler = dataset.negative_sampler
     evaluator = Evaluator(name=DATA)
 
-    train_dataset = TemporalGraphDataset(train_data.src, train_data.dst, train_data.t, train_data.msg)
-    val_dataset = TemporalGraphDataset(val_data.src, val_data.dst, val_data.t, val_data.msg)
-    test_dataset = TemporalGraphDataset(test_data.src, test_data.dst, test_data.t, test_data.msg)
+    train_dataset = TemporalGraphDataset(train_data.src, train_data.dst, train_data.t, train_data.msg, batch=batches['train'])
+    val_dataset = TemporalGraphDataset(val_data.src, val_data.dst, val_data.t, val_data.msg, batch=batches['val'])
+    test_dataset = TemporalGraphDataset(test_data.src, test_data.dst, test_data.t, test_data.msg, batch=batches['test'])
 
     return g, dataset, train_dataset, val_dataset, test_dataset, neg_sampler, evaluator, metric
