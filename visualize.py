@@ -114,11 +114,11 @@ def visualize_multigraph(G):
         if loc in ec:
             ec[loc] += 1
         else:
-            ec[loc] = 1
+            ec[loc] = 0.5
         ang =  -1
         if ec[loc]%2 == 1:
             ang = 1
-        ang =  ((ec[loc]//2)/15)*ang
+        ang =  ((ec[loc]/2)/15)*ang
         # rad = rad_values[i % len(rad_values)]
         draw_curved_edge(ax, pos, u, v, ang)
         # Optionally, add node labels
@@ -176,11 +176,15 @@ def draw_curved_edge(ax, pos, p1, p2, rad):
     """
     src = pos[p1]
     dst = pos[p2]
+    if p1<p2:
+        color = 'blue'
+    else:
+        color = 'green'
     # Create a curved edge with FancyArrowPatch
     edge = FancyArrowPatch(
         src, dst,
         connectionstyle=f"arc3,rad={rad}",
-        color='gray',
+        color=color,
         alpha=0.7,
         linewidth=2,
         arrowstyle=ArrowStyle("-")

@@ -15,7 +15,7 @@ from torch import Tensor
 class LastNeighborLoader:
     def __init__(self, num_nodes: int, size: int, device=None):
         self.size = size
-
+        print("Total number of nodes: ", num_nodes)
         self.neighbors = torch.empty((num_nodes, size), dtype=torch.long, device=device)
         self.e_id = torch.empty((num_nodes, size), dtype=torch.long, device=device)
         self._assoc = torch.empty(num_nodes, dtype=torch.long, device=device)
@@ -25,6 +25,8 @@ class LastNeighborLoader:
     def __call__(self, n_id: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         neighbors = self.neighbors[n_id]
         nodes = n_id.view(-1, 1).repeat(1, self.size)
+        # print("nodes: ", nodes)
+        # print("neighbors: ", neighbors)
         e_id = self.e_id[n_id]
 
         # Filter invalid neighbors (identified by `e_id < 0`).

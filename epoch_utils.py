@@ -33,9 +33,9 @@ def train(train_loader, neighbor_loader, neg_dest_sampler, assoc, device):
         # )
 
         n_id = torch.cat([src, pos_dst, neg_dst]).unique().to(device)
-        new_nodes = n_id[~torch.isin(n_id, n_id_obs)] 
-        n_id_seen = n_id[~torch.isin(n_id, new_nodes)] 
-        n_id_obs = torch.cat((n_id_obs, new_nodes), dim=0).unique() 
+        # new_nodes = n_id[~torch.isin(n_id, n_id_obs)] 
+        # n_id_seen = n_id[~torch.isin(n_id, new_nodes)] 
+        # n_id_obs = torch.cat((n_id_obs, new_nodes), dim=0).unique() 
         n_id, edge_index, e_id = neighbor_loader(n_id)
 
         print("src: ", src)
@@ -49,7 +49,7 @@ def train(train_loader, neighbor_loader, neg_dest_sampler, assoc, device):
 
         input("train epoch utils: ")
         
-        assoc[n_id] = torch.arange(n_id.size(0), device=device)
+        # assoc[n_id] = torch.arange(n_id.size(0), device=device)
 
         # z, last_update = model['memory'](n_id)
         # z_exp = z_exp_obs[n_id_seen].detach() 
