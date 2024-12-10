@@ -9,7 +9,7 @@ from tgb.linkproppred.dataset_pyg import PyGLinkPropPredDataset
 import torch
 import time
 import random
-import dgl
+# import dgl
 import numpy as np
 
 from sklearn.metrics import average_precision_score, roc_auc_score
@@ -82,9 +82,42 @@ for e in range(train_param['epoch']):
     for batch in train_dataloader:
         t_tot_s = time.time()
         neg_dst = neg_link_sampler.sample(batch['dst'].numpy())
-        root_nodes =  np.concatenate([batch['src'].numpy(), batch['dst'].numpy(), neg_dst])
-        ts =  np.concatenate([batch['t'].numpy(), batch['t'].numpy(), batch['t'].numpy()])
-        sampler.sample(root_nodes, ts)
+
+        src = batch['src'].numpy()
+        dst = batch['dst'].numpy()
+        c = batch['b'].numpy()
+        t = batch['t'].numpy()
+        k = c.max() + 1
+        # print(k)
+        srcs = [src[c == i] for i in range(k)]
+        dsts = [dst[c == i] for i in range(k)]
+        neg_dsts = [neg_dst[c == i] for i in range(k)]
+        tx = [t[c == i] for i in range(k)]
+        # print(ts)
+        tblocks = []
+        rns = []
+        tss = []
+        for i in range(k):
+            root_nodes = np.concatenate([srcs[i], dsts[i], neg_dsts[i]])
+            # print(root_nodes)
+            
+            ts = np.concatenate([tx[i], tx[i], tx[i]])
+            # print(ts)
+            # input()
+            sampler.sample(root_nodes, ts)
+            ret = sampler.get_ret()
+            mfgs = to_dgl_graph(ret, 1, edge_feats, root_nodes, reverse=False)
+            if mfgs[0][0].num_edges() > 0:
+                tblocks.append((mfgs[0][0], ppg, npg))
+                rns.append(root_nodes)
+                tss.append(ts)
+
+
+
+        # root_nodes =  np.concatenate([batch['src'].numpy(), batch['dst'].numpy(), neg_dst])
+        # ts =  np.concatenate([batch['t'].numpy(), batch['t'].numpy(), batch['t'].numpy()])
+        # sampler.sample(root_nodes, ts)
+        # input("Exit")
         # npr = neg_dst-batch['dst'].numpy()
         # num_zeros = np.sum(npr == 0)
         # print(f"Number of zeros: {num_zeros}")

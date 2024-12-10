@@ -41,8 +41,8 @@ ext_full_eid = [[] for _ in range(num_nodes)]
 
 # for idx, row in tqdm(df.iterrows(), total=len(df)):
 for idx in tqdm(range(dataset.src.shape[0])):
-    src = dataset.src[idx].item()
-    dst = dataset.dst[idx].item()
+    dst = dataset.src[idx].item()
+    src = dataset.dst[idx].item()
     ts = float(dataset.ts[idx].item())
     # print(src, dst)
 #     src = int(row['src'])
