@@ -1,5 +1,8 @@
 import torch
 import tqdm
+from visualize import create_nx_multigraph, visualize_multigraph
+
+
 def train(train_loader, neighbor_loader, neg_dest_sampler, assoc, device):
 
     # model['memory'].train()
@@ -34,6 +37,17 @@ def train(train_loader, neighbor_loader, neg_dest_sampler, assoc, device):
         n_id_seen = n_id[~torch.isin(n_id, new_nodes)] 
         n_id_obs = torch.cat((n_id_obs, new_nodes), dim=0).unique() 
         n_id, edge_index, e_id = neighbor_loader(n_id)
+
+        print("src: ", src)
+        print("pos_dst: ", pos_dst)
+        print("neg_dst: ", neg_dst)
+        print("n_id", n_id)
+        print("e_id:", e_id)
+        print("edge_index",edge_index)
+
+        visualize_multigraph(create_nx_multigraph(n_id,e_id, edge_index))
+
+        input("train epoch utils: ")
         
         assoc[n_id] = torch.arange(n_id.size(0), device=device)
 
@@ -68,3 +82,4 @@ def train(train_loader, neighbor_loader, neg_dest_sampler, assoc, device):
         # total_loss += float(loss) * batch.num_events
     
     # return total_loss / train_data.num_events
+    return None
