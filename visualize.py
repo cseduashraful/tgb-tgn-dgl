@@ -115,10 +115,10 @@ def visualize_multigraph(G):
             ec[loc] += 1
         else:
             ec[loc] = 0.5
-        ang =  -1
-        if ec[loc]%2 == 1:
-            ang = 1
-        ang =  ((ec[loc]/2)/15)*ang
+        # ang =  -1
+        # if ec[loc]%2 == 1:
+        #     ang = 1
+        ang =  ec[loc]/30
         # rad = rad_values[i % len(rad_values)]
         draw_curved_edge(ax, pos, u, v, ang)
         # Optionally, add node labels

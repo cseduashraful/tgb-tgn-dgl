@@ -25,6 +25,10 @@ from epoch_utils import train
 from neg_sampler import NegLinkSamplerDest
 
 
+#change based on dgl/pyg
+from model_utils import getModel
+
+
 parser=argparse.ArgumentParser()
 parser.add_argument('--data', type=str, help='dataset name')
 parser.add_argument('--config', type=str, help='path to config file')
@@ -44,28 +48,30 @@ sample_param, memory_param, gnn_param, train_param = parse_config(args.config)
 
 data, train_dataloader, val_dataloader, test_dataloader, neg_sampler, evaluator, metric = getDataWithDependecyBlock(args.data, train_param)
 unique_destination_nodes =  torch.unique(data.dst)
-# train_dataloader = DataLoader(train_dataset, batch_size= train_param['batch_size'], shuffle=False)
-# val_dataloader = DataLoader(val_dataset, batch_size= train_param['batch_size'], shuffle=False)
-# test_dataloader = DataLoader(test_dataset, batch_size= train_param['batch_size'], shuffle=False)
-# train_edge_end = train_dataset.src.shape[0]#df[df['ext_roll'].gt(0)].index[0]
-# val_edge_end = train_edge_end + val_dataset.src.shape[0] #df[df['ext_roll'].gt(1)].index[0]
-
-# gnn_dim_node = 0 #if node_feats is None else node_feats.shape[1]
-# gnn_dim_edge = dataset.edge_feat.shape[1]#0 if edge_feats is None else edge_feats.shape[1]
-# edge_feats  = dataset.edge_feat
-# node_feats = None
+print("feature dim: ", data.msg.shape[1])
 
 print("Neighbor::: ", sample_param['neighbor'][0])
 neg_dest_sampler = NegLinkSamplerDest(unique_destination_nodes)
 assoc = torch.empty(data.num_nodes, dtype=torch.long, device=device)
 neighbor_loader = LastNeighborLoader(data.num_nodes, size=sample_param['neighbor'][0], device=device)
 
+
+model = getModel(data.msg.shape[1], gnn_param['dim_out'], device)
+# optimizer = torch.optim.Adam(
+#     set(model['memory'].parameters()) | set(model['gnn'].parameters()) | set(model['link_pred'].parameters()),
+#     lr=LR,
+# )
+optimizer = torch.optim.Adam(model['gnn'].parameters(),lr=train_param['lr'],)
+criterion = torch.nn.BCEWithLogitsLoss()
+
 start_time = time.time()
 for e in range(train_param['epoch']):
-    print('Epoch {:d}:'.format(e))
-    loss = train(train_dataloader, neighbor_loader, neg_dest_sampler, assoc, device)
-    # for batch in train_dataloader:
-        
+    # print('Epoch {:d}:'.format(e))
+    trs = time.time()
+    loss = train(model, data.msg, train_dataloader, neighbor_loader, neg_dest_sampler, assoc, device, optimizer, criterion)
+    tre = time.time()
+    print(f"Epoch: {e:02d}, Loss: {loss:.4f}, Training elapsed Time (s): {tre-trs: .4f}")
+    # for batch in train_dataloader:        
     #     # print("batch['src']: ", batch['src'])
     #     # print("batch['dst']: ", batch['dst'])
     #     # print("batch['b']: ", batch['b'])
