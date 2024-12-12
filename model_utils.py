@@ -22,7 +22,7 @@ class TGNN(nn.Module):
         nn.init.xavier_normal_(self.timeEncode.weight, gain=gain)
         nn.init.xavier_normal_(self.timedEdge.weight, gain=gain)
 
-    def forward(self, g, ef, bt, blocks):
+    def forward(self, g, ef, bt, blocks, neg_samples=1):
         bt = bt.view(-1, 1)
         s, p, n, t, m, assoc, new_assoc = blocks
         # new_assoc = assoc.clone()
@@ -32,9 +32,11 @@ class TGNN(nn.Module):
         for idx, tidx in enumerate(t):
             # print("edges: ", g.num_edges())
 
+            # print("p[idx] shape: ", p[idx].shape)
+            # print("n[idx] shape: ", n[idx].shape)
 
             pos_root_nodes  =  torch.cat([s[idx], p[idx]], dim=0).unique()
-            root_nodes = torch.cat([pos_root_nodes, n[idx]], dim=0).unique()
+            root_nodes = torch.cat([pos_root_nodes, n[idx].view(-1)], dim=0).unique()
             # print(s[idx])
             # print(root_nodes)
             # print(new_assoc)
@@ -67,7 +69,7 @@ class TGNN(nn.Module):
                 # return g.ndata['h']
                 s_emb.append(subg.ndata['h'][new_assoc[s[idx]]])
                 p_emb.append(subg.ndata['h'][new_assoc[p[idx]]])
-                n_emb.append(subg.ndata['h'][new_assoc[n[idx]]])
+                n_emb.append(subg.ndata['h'][new_assoc[n[idx].view(-1)]])
                 # print("41: ", torch.cuda.memory_allocated())
             #update graph (add positive edges with features m)
             # print("43: ", torch.cuda.memory_allocated()) 
@@ -77,7 +79,7 @@ class TGNN(nn.Module):
             ef = torch.cat([ef, m[idx], m[idx]], dim=0)
             bt = torch.cat([bt, tidx.view(-1, 1), tidx.view(-1, 1)], dim=0)
 
-        return self.predictor(torch.cat(s_emb, dim=0), torch.cat(p_emb, dim=0), torch.cat(n_emb, dim=0))
+        return self.predictor(torch.cat(s_emb, dim=0), torch.cat(p_emb, dim=0), torch.cat(n_emb, dim=0), neg_samples=neg_samples)
 
 """
 Edge predictor from Graph Mixer

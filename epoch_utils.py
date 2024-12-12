@@ -86,7 +86,7 @@ from dgl_utils import getGraph
 
 
 @torch.no_grad()
-def test(loader, neg_sampler, split_mode, model, device):
+def test(model, feats, loader, neighbor_loader, neg_sampler, assoc, device, optimizer, criterion, evaluator, metric, split_mode):
 
     # model['memory'].eval()
     model['gnn'].eval()
@@ -113,10 +113,51 @@ def test(loader, neg_sampler, split_mode, model, device):
 #         # n_id_obs = torch.cat((n_id_obs, new_nodes), dim=0).unique() 
         
         neg_batch_list = neg_sampler.query_batch(src, pos_dst, t, split_mode=split_mode)
-
+        print(len(neg_batch_list))
+        
+        # print(neg_batch_tensor.shape)
+        # input("stopped by input 119")
+        min_size =  99999999
         for idx, neg_batch in enumerate(neg_batch_list):
-              print(neg_batch.shape)
-              input()
+              if len(neg_batch) < min_size:
+                  min_size = len(neg_batch)
+            #   if len(neg_batch) != 999:
+            #     print(len(neg_batch))
+            #     input("stopped by input 122")
+        neg_batch_list = [row[:min_size] for row in neg_batch_list]
+        neg_dst = torch.tensor(neg_batch_list)
+        print(neg_dst.shape)
+        print(src.shape)
+        
+        k = b.max() + 1
+        print(k)
+        msg = msg.to(device)
+        t = t.to(device)
+        # src = src.to(device)
+        # pos_dst = pos_dst.to(device)
+        # neg_dst = neg_dst.to(device)
+
+        srcs = [src[b == i] for i in range(k)]
+        pos_dsts = [pos_dst[b == i] for i in range(k)]
+        neg_dsts = [neg_dst[b == i] for i in range(k)]
+        tx = [t[b == i] for i in range(k)]
+        msgs = [msg[b == i] for i in range(k)]
+        # print("done with spliting")
+        n_id = torch.cat([src, pos_dst, neg_dst.view(-1)]).unique().to(device)
+        # print("n_id: ", n_id.shape)
+        n_id, edge_index, e_id, batch_t = neighbor_loader(n_id)
+        batch_feats = feats[e_id.cpu()].to(device)
+        g = getGraph(edge_index[0], edge_index[1], n_id)
+        pos_out, neg_out  = model['gnn'](g, batch_feats, batch_t, (srcs, pos_dsts, neg_dsts, tx, msgs,  neighbor_loader._assoc, assoc), neg_samples=neg_dst.shape[1])
+        neg_out = neg_out.view(pos_out.shape[0], -1, 1)
+        print("pos_out shape: ", pos_out.shape)
+        print("neg_out_shape: ", neg_out.shape)
+        
+
+
+
+
+        #       input()
 #             src = torch.full((1 + len(neg_batch),), src[idx], device=device)
 #             dst = torch.tensor(
 #                 np.concatenate(

@@ -21,7 +21,7 @@ from utils import parse_config, getDataWithDependecyBlock
 from dependencyGraph import dependecyAwareBatch as dab
 # from sampler import *
 from neighbor_loader import LastNeighborLoader
-from epoch_utils import train
+from epoch_utils import train, test
 from neg_sampler import NegLinkSamplerDest
 
 
@@ -67,10 +67,16 @@ criterion = torch.nn.BCEWithLogitsLoss()
 start_time = time.time()
 for e in range(train_param['epoch']):
     # print('Epoch {:d}:'.format(e))
+    # trs = time.time()
+    # loss = train(model, data.msg, train_dataloader, neighbor_loader, neg_dest_sampler, assoc, device, optimizer, criterion)
+    # tre = time.time()
+    # print(f"Epoch: {e+1:02d}, Loss: {loss:.4f}, Training elapsed Time (s): {tre-trs: .4f}")
     trs = time.time()
-    loss = train(model, data.msg, train_dataloader, neighbor_loader, neg_dest_sampler, assoc, device, optimizer, criterion)
+    loss = test(model, data.msg, val_dataloader, neighbor_loader, neg_sampler, assoc, device, optimizer, criterion, evaluator, metric, 'val')
     tre = time.time()
-    print(f"Epoch: {e:02d}, Loss: {loss:.4f}, Training elapsed Time (s): {tre-trs: .4f}")
+    # print(f"Epoch: {e+1:02d}, Val Loss: {loss:.4f}, Validation elapsed Time (s): {tre-trs: .4f}")
+    
+
     # for batch in train_dataloader:        
     #     # print("batch['src']: ", batch['src'])
     #     # print("batch['dst']: ", batch['dst'])
