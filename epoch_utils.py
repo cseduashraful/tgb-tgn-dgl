@@ -113,7 +113,7 @@ def test(model, feats, loader, neighbor_loader, neg_sampler, assoc, device, opti
 #         # n_id_obs = torch.cat((n_id_obs, new_nodes), dim=0).unique() 
         
         neg_batch_list = neg_sampler.query_batch(src, pos_dst, t, split_mode=split_mode)
-        print(len(neg_batch_list))
+        # print(len(neg_batch_list))
         
         # print(neg_batch_tensor.shape)
         # input("stopped by input 119")
@@ -126,11 +126,11 @@ def test(model, feats, loader, neighbor_loader, neg_sampler, assoc, device, opti
             #     input("stopped by input 122")
         neg_batch_list = [row[:min_size] for row in neg_batch_list]
         neg_dst = torch.tensor(neg_batch_list)
-        print(neg_dst.shape)
-        print(src.shape)
+        # print(neg_dst.shape)
+        # print(src.shape)
         
         k = b.max() + 1
-        print(k)
+        # print(k)
         msg = msg.to(device)
         t = t.to(device)
         # src = src.to(device)
@@ -148,10 +148,21 @@ def test(model, feats, loader, neighbor_loader, neg_sampler, assoc, device, opti
         n_id, edge_index, e_id, batch_t = neighbor_loader(n_id)
         batch_feats = feats[e_id.cpu()].to(device)
         g = getGraph(edge_index[0], edge_index[1], n_id)
-        pos_out, neg_out  = model['gnn'](g, batch_feats, batch_t, (srcs, pos_dsts, neg_dsts, tx, msgs,  neighbor_loader._assoc, assoc), neg_samples=neg_dst.shape[1])
+        pos_out, neg_out  = model['gnn'](g, batch_feats, batch_t, (srcs, pos_dsts, neg_dsts, tx, msgs,  neighbor_loader._assoc), neg_samples=neg_dst.shape[1])
         neg_out = neg_out.view(pos_out.shape[0], -1, 1)
-        print("pos_out shape: ", pos_out.shape)
-        print("neg_out_shape: ", neg_out.shape)
+        # print("pos_out shape: ", pos_out.shape)
+        # print("neg_out_shape: ", neg_out.shape)
+        # input_dict = {
+        #         "y_pred_pos": np.array([y_pred[0, :].squeeze(dim=-1).cpu()]),
+        #         "y_pred_neg": np.array(y_pred[1:, :].squeeze(dim=-1).cpu()),
+        #         "eval_metric": [metric],
+        #     }
+        input_dict = {
+                "y_pred_pos": np.array(pos_out.squeeze(dim=-1).cpu()),
+                "y_pred_neg": np.array(neg_out.squeeze(dim=-1).cpu()),
+                "eval_metric": [metric],
+            }
+        perf_list.append(evaluator.eval(input_dict)[metric])
         
 
 
@@ -194,15 +205,16 @@ def test(model, feats, loader, neighbor_loader, neg_sampler, assoc, device, opti
 #             perf_list.append(evaluator.eval(input_dict)[metric])
 
 #         model['memory'].update_state(pos_src, pos_dst, pos_t, pos_msg)
-#         neighbor_loader.insert(pos_src, pos_dst)
+        # neighbor_loader.insert(pos_src, pos_dst)
+        neighbor_loader.insert(src.to(device), pos_dst.to(device), t.to(device))
 
 #         x_obs = model['memory'].memory
 
 #         z_exp_obs = exp_gnn(x_obs, cayley_g) 
 
-#     perf_metrics = float(torch.tensor(perf_list).mean())
+    perf_metrics = float(torch.tensor(perf_list).mean())
 
-#     return perf_metrics
+    return perf_metrics
 
 
 def train(model, feats, train_loader, neighbor_loader, neg_dest_sampler, assoc, device, optimizer, criterion):
@@ -219,7 +231,15 @@ def train(model, feats, train_loader, neighbor_loader, neg_dest_sampler, assoc, 
 
     total_loss = 0
     total = 0
+
+    # sanity = 2
+    # idx = 0
     for batch in train_loader:
+
+        # #sanity
+        # if idx > sanity:
+        #     continue
+        # idx += 1
         # batch = batch.to(device)
         # optimizer.zero_grad()
 
@@ -269,11 +289,15 @@ def train(model, feats, train_loader, neighbor_loader, neg_dest_sampler, assoc, 
 
 
         g = getGraph(edge_index[0], edge_index[1], n_id)
-        pos_out, neg_out  = model['gnn'](g, batch_feats, batch_t, (srcs, pos_dsts, neg_dsts, tx, msgs,  neighbor_loader._assoc, assoc))
+        pos_out, neg_out  = model['gnn'](g, batch_feats, batch_t, (srcs, pos_dsts, neg_dsts, tx, msgs,  neighbor_loader._assoc))
         # print("pos score: ", pos_out)
         # print("neg score: ", neg_out)
         # print(pos_out.shape)
         # print(neg_out.shape)
+        # has_inf = any(torch.isinf(param).any().item() for param in model['gnn'].parameters())
+
+        # if has_inf:
+        #     print("The model weights contain at least one infinite value.")
 
 
 
@@ -314,6 +338,7 @@ def train(model, feats, train_loader, neighbor_loader, neg_dest_sampler, assoc, 
         # z_exp_obs = exp_gnn(x_obs, cayley_g) 
         # model['memory'].detach()
         total_loss += float(loss) * src.shape[0]
+        print("total_loss: ", total_loss, " total: ", total)
     
     return total_loss / total
     # return None

@@ -56,7 +56,7 @@ assoc = torch.empty(data.num_nodes, dtype=torch.long, device=device)
 neighbor_loader = LastNeighborLoader(data.num_nodes, size=sample_param['neighbor'][0], device=device)
 
 
-model = getModel(data.msg.shape[1], gnn_param['dim_out'], device)
+model = getModel(data.msg.shape[1], gnn_param['dim_out'], data.num_nodes, device)
 # optimizer = torch.optim.Adam(
 #     set(model['memory'].parameters()) | set(model['gnn'].parameters()) | set(model['link_pred'].parameters()),
 #     lr=LR,
@@ -66,15 +66,15 @@ criterion = torch.nn.BCEWithLogitsLoss()
 
 start_time = time.time()
 for e in range(train_param['epoch']):
-    # print('Epoch {:d}:'.format(e))
-    # trs = time.time()
-    # loss = train(model, data.msg, train_dataloader, neighbor_loader, neg_dest_sampler, assoc, device, optimizer, criterion)
-    # tre = time.time()
-    # print(f"Epoch: {e+1:02d}, Loss: {loss:.4f}, Training elapsed Time (s): {tre-trs: .4f}")
+    print('Epoch {:d}:'.format(e))
     trs = time.time()
-    loss = test(model, data.msg, val_dataloader, neighbor_loader, neg_sampler, assoc, device, optimizer, criterion, evaluator, metric, 'val')
+    loss = train(model, data.msg, train_dataloader, neighbor_loader, neg_dest_sampler, assoc, device, optimizer, criterion)
     tre = time.time()
-    # print(f"Epoch: {e+1:02d}, Val Loss: {loss:.4f}, Validation elapsed Time (s): {tre-trs: .4f}")
+    print(f"Epoch: {e+1:02d}, Loss: {loss:.4f}, Training elapsed Time (s): {tre-trs: .4f}")
+    trs = time.time()
+    perf_metric_val = test(model, data.msg, val_dataloader, neighbor_loader, neg_sampler, assoc, device, optimizer, criterion, evaluator, metric, 'val')
+    tre = time.time()
+    print(f"Validation {metric}: {perf_metric_val: .4f}, elapsed Time (s): {tre-trs: .4f}")
     
 
     # for batch in train_dataloader:        

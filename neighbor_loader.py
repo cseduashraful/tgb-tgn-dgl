@@ -23,7 +23,7 @@ class LastNeighborLoader:
 
         self.reset_state()
 
-    def __call__(self, n_id: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+    def __call__(self, n_id: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         neighbors = self.neighbors[n_id]
         nodes = n_id.view(-1, 1).repeat(1, self.size)
         # print("nodes: ", nodes)
@@ -31,9 +31,16 @@ class LastNeighborLoader:
         e_id = self.e_id[n_id]
         t = self.t[n_id]
 
+        # print(nt.shape)
+        # print(t.shape)
+        # input("neighbor loader 36: ")
+        # if nt is not None:
+        #     t = nt - t
+
         # Filter invalid neighbors (identified by `e_id < 0`).
         mask = e_id >= 0
         neighbors, nodes, e_id, t = neighbors[mask], nodes[mask], e_id[mask], t[mask]
+
 
         # Relabel node indices.
         n_id = torch.cat([n_id, neighbors]).unique()
