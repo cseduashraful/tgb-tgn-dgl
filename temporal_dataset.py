@@ -56,22 +56,3 @@ class TemporalGraphDataset(Dataset):
                 'idx': idx
             }
 
-# Example Data
-# data = {
-#     "src": torch.tensor([0, 1, 2, 3, 4]),
-#     "dst": torch.tensor([1, 2, 3, 4, 5]),
-#     "t": torch.tensor([10, 20, 30, 40, 50]),
-#     "msg": torch.tensor([[1, 1], [2, 2], [3, 3], [4, 4], [5, 5]])  # Features as 2D vectors
-# }
-
-# # Initialize the Dataset
-# dataset = TemporalGraphDataset(data['src'], data['dst'], data['t'], data['msg'])
-
-# # Create the DataLoader
-# batch_size = 2
-# dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-# # Iterate through the DataLoader
-# for batch in dataloader:
-#     print("Batch:")
-#     print(batch)
