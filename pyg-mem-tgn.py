@@ -26,7 +26,7 @@ from neg_sampler import NegLinkSamplerDest
 
 
 #change based on dgl/pyg
-from model_utils import getModel
+from model_utils import getModel, getOptimizer
 
 
 parser=argparse.ArgumentParser()
@@ -56,12 +56,14 @@ assoc = torch.empty(data.num_nodes, dtype=torch.long, device=device)
 neighbor_loader = LastNeighborLoader(data.num_nodes, size=sample_param['neighbor'][0], device=device)
 
 
-model = getModel(data.msg.shape[1], gnn_param['dim_out'], data.num_nodes, device)
+model = getModel(data.msg.shape[1], gnn_param['dim_out'], data.num_nodes, device, gnn_param=gnn_param)
 # optimizer = torch.optim.Adam(
 #     set(model['memory'].parameters()) | set(model['gnn'].parameters()) | set(model['link_pred'].parameters()),
 #     lr=LR,
 # )
-optimizer = torch.optim.Adam(model['gnn'].parameters(),lr=train_param['lr'],)
+optimizer = getOptimizer(model,train_param['lr'] )
+
+
 criterion = torch.nn.BCEWithLogitsLoss()
 
 start_time = time.time()

@@ -1,39 +1,59 @@
-import dgl
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import itertools
 import numpy as np
 import scipy.sparse as sp
+
+import dgl
 import dgl.function as fn
+from dgl.ops import edge_softmax
+from dgl.base import DGLError
 
 class TGNN(nn.Module):
-    def __init__(self, ef_dim, hidden_dim, num_nodes, device):
+    def __init__(self, ef_dim, hidden_dim, num_nodes, device, num_heads = 8, layers = 1, time_dim = 100):
         super().__init__()
 
         time_dim = hidden_dim
+        self.memory_dim = hidden_dim
+
 
         self.time_assoc = torch.zeros(num_nodes, dtype=torch.float, requires_grad=False).to(device)
         self.num_nodes = num_nodes
+        self.edge_feat_dim = ef_dim
+        self.embedding_dim = hidden_dim
+        self.num_heads = num_heads
+        self.layers = layers
+
+
+
         self.memory = MemoryModule(self.num_nodes, hidden_dim)
-        time_encode = TimeEncode(time_dim)
-        self.temporal_edge_process = TemporalEdgePreprocess(time_encode)
+        self.temporal_encoder = TimeEncode(time_dim)
+        # self.temporal_edge_process = TemporalEdgePreprocess(self.temporal_encoder)
+        self.embedding_attn = TemporalTransformerConv(self.edge_feat_dim,
+                                                      self.memory_dim,
+                                                      self.temporal_encoder,
+                                                      self.embedding_dim,
+                                                      self.num_heads,
+                                                      layers=self.layers,
+                                                      allow_zero_in_degree=True)
 
     
 
 
         self.assoc = torch.empty(num_nodes, dtype=torch.long)
         # self.timeEncode = TimeEncode(hidden_dim)#nn.Linear(1, hidden_dim)
-        self.timedEdge = nn.Linear(ef_dim+hidden_dim, hidden_dim)
+        # self.timedEdge = nn.Linear(ef_dim+hidden_dim, hidden_dim)
 
-        self.predictor = EdgePredictor(ef_dim+time_dim, hidden_dim)        
-        self.reset_parameters()
+        self.predictor = EdgePredictor(hidden_dim, hidden_dim)        
+        # self.reset_parameters()
 
 
-    def reset_parameters(self):
-        gain = nn.init.calculate_gain('relu')
-        # nn.init.xavier_normal_(self.timeEncode.weight, gain=gain)
-        nn.init.xavier_normal_(self.timedEdge.weight, gain=gain)
+    # def reset_parameters(self):
+    #     gain = nn.init.calculate_gain('relu')
+    #     # nn.init.xavier_normal_(self.timeEncode.weight, gain=gain)
+    #     nn.init.xavier_normal_(self.timedEdge.weight, gain=gain)
     
 
     
@@ -75,12 +95,16 @@ class TGNN(nn.Module):
             #DGL Specific
 
             # subg = dgl.node_subgraph(g, mapped_nids)
+            # print("g edata: ", g.num_edges() )
             subg = dgl.in_subgraph(g, mapped_nids)
+            # print("subg.edata['_ID']: ", subg.edata['_ID'])
+            # input("subg.edata['_ID']: ")
             self.assoc[subg.ndata['dgl.nid']] = torch.arange(len(subg.ndata['dgl.nid']), device = self.assoc.device)
             subg_ef = ef[subg.edata['_ID'], :]
             subg_bt = bt[subg.edata['_ID'], :]
             # print("subg bt shape: ", subg_bt.shape)
             subg_node_memory = self.memory.memory[subg.ndata['dgl.nid'], :]
+            # emb_memory = self.memory.memory[emb_graph.ndata[dgl.NID], :]
 
             # print("sidx: ", s[idx])
             # print("pidx: ", p[idx])
@@ -106,14 +130,20 @@ class TGNN(nn.Module):
                 # print("subg.ndata['timestamp'] ", subg.ndata['timestamp'].shape)
                 # print("subg.edata['timestamp'] ", subg.edata['timestamp'].shape)
                 subg.edata['feats'] = subg_ef
-                subg.edata['cf'] = self.temporal_edge_process(subg)
 
-                subg.update_all(message_func=dgl.function.copy_e('cf', 'msg'),
-                reduce_func=dgl.function.sum('msg', 'h'))
-                # return g.ndata['h']
-                s_emb.append(subg.ndata['h'][self.assoc[s[idx]]])
-                p_emb.append(subg.ndata['h'][self.assoc[p[idx]]])
-                n_emb.append(subg.ndata['h'][self.assoc[n[idx].view(-1)]])
+                embed  =  self.embedding_attn(subg, subg_node_memory)
+                s_emb.append(embed[self.assoc[s[idx]]])
+                p_emb.append(embed[self.assoc[p[idx]]])
+                n_emb.append(embed[self.assoc[n[idx].view(-1)]])
+
+                # subg.edata['cf'] = self.temporal_edge_process(subg)
+
+                # subg.update_all(message_func=dgl.function.copy_e('cf', 'msg'),
+                # reduce_func=dgl.function.sum('msg', 'h'))
+                # # return g.ndata['h']
+                # s_emb.append(subg.ndata['h'][self.assoc[s[idx]]])
+                # p_emb.append(subg.ndata['h'][self.assoc[p[idx]]])
+                # n_emb.append(subg.ndata['h'][self.assoc[n[idx].view(-1)]])
                 # print("41: ", torch.cuda.memory_allocated())
             #update graph (add positive edges with features m)
             # print("43: ", torch.cuda.memory_allocated()) 
@@ -237,7 +267,7 @@ class MemoryModule(nn.Module):
     def create_memory(self):  
         self.last_update_t = nn.Parameter(torch.zeros(
             self.n_node).float(), requires_grad=False)
-        self.memory = nn.Parameter(torch.zeros(
+        self.memory = nn.Parameter(torch.ones(
             (self.n_node, self.hidden_dim)).float(), requires_grad=False)
         
     def reset_memory(self):  
@@ -425,10 +455,256 @@ class TemporalEdgePreprocess(nn.Module):
         return efeat
 
 
+class Identity(nn.Module):
+    """A placeholder identity operator that is argument-insensitive.
+    (Identity has already been supported by PyTorch 1.2, we will directly
+    import torch.nn.Identity in the future)
+    """
+
+    def __init__(self):
+        super(Identity, self).__init__()
+
+    def forward(self, x):
+        """Return input"""
+        return x
+    
+class EdgeGATConv(nn.Module):
+    '''Edge Graph attention compute the graph attention from node and edge feature then aggregate both node and
+    edge feature.
+
+    Parameter
+    ==========
+    node_feats : int
+        number of node features
+
+    edge_feats : int
+        number of edge features
+
+    out_feats : int
+        number of output features
+
+    num_heads : int
+        number of heads in multihead attention
+
+    feat_drop : float, optional
+        drop out rate on the feature
+
+    attn_drop : float, optional
+        drop out rate on the attention weight
+
+    negative_slope : float, optional
+        LeakyReLU angle of negative slope.
+
+    residual : bool, optional
+        whether use residual connection
+
+    allow_zero_in_degree : bool, optional
+        If there are 0-in-degree nodes in the graph, output for those nodes will be invalid
+        since no message will be passed to those nodes. This is harmful for some applications
+        causing silent performance regression. This module will raise a DGLError if it detects
+        0-in-degree nodes in input graph. By setting ``True``, it will suppress the check
+        and let the users handle it by themselves. Defaults: ``False``.
+
+    '''
+
+    def __init__(self,
+                 node_feats,
+                 edge_feats,
+                 out_feats,
+                 num_heads,
+                 feat_drop=0.,
+                 attn_drop=0.,
+                 negative_slope=0.2,
+                 residual=False,
+                 activation=None,
+                 allow_zero_in_degree=False):
+        super(EdgeGATConv, self).__init__()
+        self._num_heads = num_heads
+        self._node_feats = node_feats
+        self._edge_feats = edge_feats
+        self._out_feats = out_feats
+        self._allow_zero_in_degree = allow_zero_in_degree
+        self.fc_node = nn.Linear(
+            self._node_feats, self._out_feats*self._num_heads)
+        self.fc_edge = nn.Linear(
+            self._edge_feats, self._out_feats*self._num_heads)
+        self.attn_l = nn.Parameter(torch.FloatTensor(
+            size=(1, self._num_heads, self._out_feats)))
+        self.attn_r = nn.Parameter(torch.FloatTensor(
+            size=(1, self._num_heads, self._out_feats)))
+        self.attn_e = nn.Parameter(torch.FloatTensor(
+            size=(1, self._num_heads, self._out_feats)))
+        self.feat_drop = nn.Dropout(feat_drop)
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.leaky_relu = nn.LeakyReLU(negative_slope)
+        self.residual = residual
+        if residual:
+            if self._node_feats != self._out_feats:
+                self.res_fc = nn.Linear(
+                    self._node_feats, self._out_feats*self._num_heads, bias=False)
+            else:
+                self.res_fc = Identity()
+        self.reset_parameters()
+        self.activation = activation
+
+    def reset_parameters(self):
+        gain = nn.init.calculate_gain('relu')
+        nn.init.xavier_normal_(self.fc_node.weight, gain=gain)
+        nn.init.xavier_normal_(self.fc_edge.weight, gain=gain)
+        nn.init.xavier_normal_(self.attn_l, gain=gain)
+        nn.init.xavier_normal_(self.attn_r, gain=gain)
+        nn.init.xavier_normal_(self.attn_e, gain=gain)
+        if self.residual and isinstance(self.res_fc, nn.Linear):
+            nn.init.xavier_normal_(self.res_fc.weight, gain=gain)
+
+    def msg_fn(self, edges):
+        ret = edges.data['a'].view(-1, self._num_heads,
+                                   1)*edges.data['el_prime']
+        return {'m': ret}
+
+    def forward(self, graph, nfeat, efeat, get_attention=False):
+        with graph.local_scope():
+            if not self._allow_zero_in_degree:
+                if (graph.in_degrees() == 0).any():
+                    raise DGLError('There are 0-in-degree nodes in the graph, '
+                                   'output for those nodes will be invalid. '
+                                   'This is harmful for some applications, '
+                                   'causing silent performance regression. '
+                                   'Adding self-loop on the input graph by '
+                                   'calling `g = dgl.add_self_loop(g)` will resolve '
+                                   'the issue. Setting ``allow_zero_in_degree`` '
+                                   'to be `True` when constructing this module will '
+                                   'suppress the check and let the code run.')
+
+            nfeat = self.feat_drop(nfeat)
+            efeat = self.feat_drop(efeat)
+
+            node_feat = self.fc_node(
+                nfeat).view(-1, self._num_heads, self._out_feats)
+            edge_feat = self.fc_edge(
+                efeat).view(-1, self._num_heads, self._out_feats)
+
+            el = (node_feat*self.attn_l).sum(dim=-1).unsqueeze(-1)
+            er = (node_feat*self.attn_r).sum(dim=-1).unsqueeze(-1)
+            ee = (edge_feat*self.attn_e).sum(dim=-1).unsqueeze(-1)
+            graph.ndata['ft'] = node_feat
+            graph.ndata['el'] = el
+            graph.ndata['er'] = er
+            graph.edata['ee'] = ee
+            graph.apply_edges(fn.u_add_e('el', 'ee', 'el_prime'))
+            graph.apply_edges(fn.e_add_v('el_prime', 'er', 'e'))
+            e = self.leaky_relu(graph.edata['e'])
+            graph.edata['a'] = self.attn_drop(edge_softmax(graph, e))
+            graph.edata['efeat'] = edge_feat
+            graph.update_all(self.msg_fn, fn.sum('m', 'ft'))
+            rst = graph.ndata['ft']
+            if self.residual:
+                resval = self.res_fc(nfeat).view(
+                    nfeat.shape[0], -1, self._out_feats)
+                rst = rst + resval
+
+            if self.activation:
+                rst = self.activation(rst)
+
+            if get_attention:
+                return rst, graph.edata['a']
+            else:
+                return rst
 
 
+class TemporalTransformerConv(nn.Module):
+    def __init__(self,
+                 edge_feats,
+                 memory_feats,
+                 temporal_encoder,
+                 out_feats,
+                 num_heads,
+                 allow_zero_in_degree=False,
+                 layers=1):
+        '''Temporal Transformer model for TGN and TGAT
 
-def getModel(feature_dim, hidden_dim, num_nodes, device):
-    gnn = TGNN(feature_dim, hidden_dim, num_nodes, device).to(device)
+        Parameter
+        ==========
+        edge_feats : int
+            number of edge features
+
+        memory_feats : int
+            dimension of memory vector
+
+        temporal_encoder : torch.nn.Module
+            compute fourier time encoding
+
+        out_feats : int
+            number of out features
+
+        num_heads : int
+            number of attention head
+
+        allow_zero_in_degree : bool, optional
+            If there are 0-in-degree nodes in the graph, output for those nodes will be invalid
+            since no message will be passed to those nodes. This is harmful for some applications
+            causing silent performance regression. This module will raise a DGLError if it detects
+            0-in-degree nodes in input graph. By setting ``True``, it will suppress the check
+            and let the users handle it by themselves. Defaults: ``False``.
+        '''
+        super(TemporalTransformerConv, self).__init__()
+        self._edge_feats = edge_feats
+        self._memory_feats = memory_feats
+        self.temporal_encoder = temporal_encoder
+        self._out_feats = out_feats
+        self._allow_zero_in_degree = allow_zero_in_degree
+        self._num_heads = num_heads
+        self.layers = layers
+
+        self.preprocessor = TemporalEdgePreprocess(self.temporal_encoder)
+        self.edge_gatconv = EdgeGATConv(node_feats=self._memory_feats,
+                                           edge_feats=self._edge_feats+self.temporal_encoder.dimension,
+                                           out_feats=self._out_feats,
+                                           num_heads=self._num_heads,
+                                           feat_drop=0.6,
+                                           attn_drop=0.6,
+                                           residual=True,
+                                           allow_zero_in_degree=allow_zero_in_degree)
+
+        # self.layer_list = nn.ModuleList()
+        # self.layer_list.append(EdgeGATConv(node_feats=self._memory_feats,
+        #                                    edge_feats=self._edge_feats+self.temporal_encoder.dimension,
+        #                                    out_feats=self._out_feats,
+        #                                    num_heads=self._num_heads,
+        #                                    feat_drop=0.6,
+        #                                    attn_drop=0.6,
+        #                                    residual=True,
+        #                                    allow_zero_in_degree=allow_zero_in_degree))
+        # for i in range(self.layers-1):
+        #     self.layer_list.append(EdgeGATConv(node_feats=self._out_feats*self._num_heads,
+        #                                        edge_feats=self._edge_feats+self.temporal_encoder.dimension,
+        #                                        out_feats=self._out_feats,
+        #                                        num_heads=self._num_heads,
+        #                                        feat_drop=0.6,
+        #                                        attn_drop=0.6,
+        #                                        residual=True,
+        #                                        allow_zero_in_degree=allow_zero_in_degree))
+
+    def forward(self, graph, memory):
+        graph = graph.local_var()
+        # graph.ndata['timestamp'] = ts
+        efeat = self.preprocessor(graph).float()
+        rst = memory
+        rst =  self.edge_gatconv(graph, rst, efeat).mean(1)
+        # for i in range(self.layers-1):
+        #     rst = self.layer_list[i](graph, rst, efeat).flatten(1)
+        # rst = self.layer_list[-1](graph, rst, efeat).mean(1)
+        return rst
+
+
+def getModel(feature_dim, hidden_dim, num_nodes, device, gnn_param = None):
+    if gnn_param is not None:
+        # num_heads = 8, layers = 1
+        gnn = TGNN(feature_dim, gnn_param['dim_out'], num_nodes, device, num_heads=gnn_param['att_head'], layers=gnn_param['layer']).to(device)
+    else:
+        gnn = TGNN(feature_dim, hidden_dim, num_nodes, device).to(device)
     # pred = MLPPredictor(hidden_dim).to(device)
     return {"gnn": gnn}
+
+def getOptimizer(model, lr):
+    return torch.optim.Adam(model['gnn'].parameters(),lr=lr,)

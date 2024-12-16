@@ -19,11 +19,11 @@ memory:
 gnn:
   - arch: 'transformer_attention'
     layer: 1
-    att_head: 2
+    att_head: 8
     dim_time: 100
     dim_out: 100
 train:
-  - epoch: 30
+  - epoch: 3000
     batch_size: 2000
     # reorder: 16
     lr: 0.0001

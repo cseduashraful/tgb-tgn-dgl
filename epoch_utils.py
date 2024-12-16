@@ -2,92 +2,20 @@ import torch
 import tqdm
 from visualize import create_nx_multigraph, visualize_multigraph
 import numpy as np
+from sklearn.metrics import average_precision_score, roc_auc_score
 
 from dgl_utils import getGraph
 
 
-# def tgb_mrr_eval(loader, model, neg_sampler, mode='val'):
-#     # neg_samples = 1
-#     model.eval()
-#     # aps = list()
-#     # aucs_mrrs = list()
-#     # start_idx = 0
-#     # if mode == 'val':
-#     #     eval_df = val_dataloader#df[train_edge_end:val_edge_end]
-#     #     start_idx = train_edge_end
-#     # elif mode == 'test':
-#     #     eval_df = test_dataloader#df[val_edge_end:]
-#     #     neg_samples = args.eval_neg_samples
-#     #     start_idx = val_edge_end
-#     # elif mode == 'train':
-#     #     eval_df = train_dataloader#df[:train_edge_end]
-#     eval_df = loader
-#     perf_list = []
-#     with torch.no_grad():
-#         total_loss = 0
-#         # for _, rows in eval_df.groupby(eval_df.index // train_param['batch_size']):
-#         for batch in eval_df:
-
-#             neg_batch_list = neg_sampler.query_batch(batch['src'], batch['dst'], batch['t'], split_mode=mode)
-#             # pos_src = batch['src'].numpy()
-#             # pos_dst = batch['dst'].numpy()
-#             # pos_ts = batch['t'].numpy()
-
-#             for idx, neg_batch in enumerate(neg_batch_list):
-
-#                 # src = np.full((1 + len(neg_batch),), pos_src[idx])
-#                 # dst = np.concatenate(([[pos_dst[idx]], np.array(neg_batch)]),axis=0,)
-#                 # root_nodes = np.concatenate([src, dst])
-#                 ts = np.full((2+len(neg_batch),), pos_ts[idx])
-
-#                 root_nodes = np.concatenate(([[pos_src[idx]],[pos_dst[idx]],np.array(neg_batch)]),axis=0,)
-            
-#                 # # root_nodes = np.concatenate([rows.src.values, rows.dst.values, neg_link_sampler.sample(len(rows) * neg_samples)]).astype(np.int32)
-#                 # # ts = np.tile(rows.time.values, neg_samples + 2).astype(np.float32)
-#                 # root_nodes =  np.concatenate([batch['src'].numpy(), batch['dst'].numpy(), neg_link_sampler.sample(batch['src'].shape[0])])
-#                 # # ts =  np.concatenate([batch.t.numpy(), batch.t.numpy(), batch.t.numpy()])
-#                 # ts = np.tile(batch['t'].numpy(), neg_samples + 2).astype(np.float32)
-#             # 
-#                 # if sampler is not None:
-#                 #     if 'no_neg' in sample_param and sample_param['no_neg']:
-#                 #         pos_root_end = len(rows) * 2
-#                 #         sampler.sample(root_nodes[:pos_root_end], ts[:pos_root_end])
-#                 #     else:
-#                 sampler.sample(root_nodes, ts)
-#                 ret = sampler.get_ret()
-#                 if gnn_param['arch'] != 'identity':
-#                     mfgs = to_dgl_blocks(ret, sample_param['history'])
-#                 else:
-#                     mfgs = node_to_dgl_blocks(root_nodes, ts)
-#                 mfgs = prepare_input(mfgs, node_feats, edge_feats, combine_first=combine_first)
-#                 if mailbox is not None:
-#                     mailbox.prep_input_mails(mfgs[0])
-#                 pred_pos, pred_neg = model(mfgs, neg_samples=len(neg_batch))
-#                 # print(pred_pos)
-#                 # print(pred_neg[:20])
 
 
-#                 # total_loss += creterion(pred_pos, torch.ones_like(pred_pos))
-#                 # total_loss += creterion(pred_neg, torch.zeros_like(pred_neg))
-#                 y_pred = torch.cat([pred_pos, pred_neg], dim=0).sigmoid().cpu()
-#                 # print(y_pred[:20])
-#                 # input()
-#                 input_dict = {
-#                     "y_pred_pos": np.array([y_pred[0, :].squeeze(dim=-1).cpu()]),
-#                     "y_pred_neg": np.array(y_pred[1:, :].squeeze(dim=-1).cpu()),
-#                     "eval_metric": [metric],
-#                 }
-#                 perf_list.append(evaluator.eval(input_dict)[metric])
-#     perf_metrics = float(torch.tensor(perf_list).mean())
-#     return perf_metrics
-
-
-
-
+sanity_check=False
+sanity = 20
 
 @torch.no_grad()
 def test(model, feats, loader, neighbor_loader, neg_sampler, assoc, device, optimizer, criterion, evaluator, metric, split_mode):
-
+    if sanity_check:
+        return -1.0
     # model['memory'].eval()
     model['gnn'].eval()
     # model['link_pred'].eval()
@@ -147,7 +75,27 @@ def test(model, feats, loader, neighbor_loader, neg_sampler, assoc, device, opti
         # print("n_id: ", n_id.shape)
         n_id, edge_index, e_id, batch_t = neighbor_loader(n_id)
         batch_feats = feats[e_id.cpu()].to(device)
-        g = getGraph(edge_index[0], edge_index[1], n_id)
+
+
+
+        self_loop = False
+        
+
+        ones_tensor = torch.ones((n_id.shape[0], batch_feats.shape[1]), device=batch_feats.device)
+        zeros_tensor = torch.zeros((n_id.shape[0]), device=batch_feats.device)
+        batch_feats = torch.cat([batch_feats, ones_tensor], dim=0)
+        batch_t = torch.cat([batch_t, zeros_tensor], dim=0)
+        self_loop=True
+        
+
+
+
+        g = getGraph(edge_index[0], edge_index[1], n_id, self_loop=self_loop)
+
+        # print(batch_feats.shape)
+        # print(g.num_edges())
+    
+
         pos_out, neg_out  = model['gnn'](g, batch_feats, batch_t, (srcs, pos_dsts, neg_dsts, tx, msgs,  neighbor_loader._assoc), neg_samples=neg_dst.shape[1])
         neg_out = neg_out.view(pos_out.shape[0], -1, 1)
         # print("pos_out shape: ", pos_out.shape)
@@ -224,7 +172,8 @@ def train(model, feats, train_loader, neighbor_loader, neg_dest_sampler, assoc, 
     # model['link_pred'].train()
 
     # model['memory'].reset_state()  
-    neighbor_loader.reset_state()  
+    neighbor_loader.reset_state() 
+    aps, aucs = [], [] 
 
     n_id_obs = torch.empty(0, dtype=torch.long, device=device) 
     # z_exp_obs = torch.zeros(1, MEM_DIM, device=device) 
@@ -232,16 +181,17 @@ def train(model, feats, train_loader, neighbor_loader, neg_dest_sampler, assoc, 
     total_loss = 0
     total = 0
 
-    # sanity = 2
-    # idx = 0
+    
+    idx = 0
     for batch in train_loader:
 
-        # #sanity
-        # if idx > sanity:
-        #     continue
-        # idx += 1
+        #sanity
+        if sanity_check:
+            if idx > sanity:
+                continue
+            idx += 1
         # batch = batch.to(device)
-        # optimizer.zero_grad()
+        optimizer.zero_grad()
 
         src, pos_dst, t, msg, b = batch['src'], batch['dst'], batch['t'], batch['msg'], batch['b']
         total += src.shape[0]
@@ -288,7 +238,27 @@ def train(model, feats, train_loader, neighbor_loader, neg_dest_sampler, assoc, 
         # visualize_multigraph(create_nx_multigraph(n_id,e_id, edge_index))
 
 
-        g = getGraph(edge_index[0], edge_index[1], n_id)
+        # print(batch_feats.shape)
+
+        self_loop = False
+
+
+        ones_tensor = torch.ones((n_id.shape[0], batch_feats.shape[1]), device=batch_feats.device)
+        zeros_tensor = torch.zeros((n_id.shape[0]), device=batch_feats.device)
+        batch_feats = torch.cat([batch_feats, ones_tensor], dim=0)
+        batch_t = torch.cat([batch_t, zeros_tensor], dim=0)
+        self_loop =True
+
+
+
+        g = getGraph(edge_index[0], edge_index[1], n_id, self_loop = self_loop)
+
+        # print(batch_feats)
+        # print(g.num_edges())
+        # input()
+
+
+        # g = getGraph(edge_index[0], edge_index[1], n_id)
         pos_out, neg_out  = model['gnn'](g, batch_feats, batch_t, (srcs, pos_dsts, neg_dsts, tx, msgs,  neighbor_loader._assoc))
         # print("pos score: ", pos_out)
         # print("neg score: ", neg_out)
@@ -338,7 +308,12 @@ def train(model, feats, train_loader, neighbor_loader, neg_dest_sampler, assoc, 
         # z_exp_obs = exp_gnn(x_obs, cayley_g) 
         # model['memory'].detach()
         total_loss += float(loss) * src.shape[0]
-        print("total_loss: ", total_loss, " total: ", total)
+        # print("total_loss: ", total_loss, " total: ", total)
+        y_pred = torch.cat([pos_out, neg_out], dim=0).detach().sigmoid().cpu()
+        y_true = torch.cat([torch.ones(pos_out.size(0)), torch.zeros(neg_out.size(0))], dim=0)
+        aps.append(average_precision_score(y_true, y_pred))
+        aucs.append(roc_auc_score(y_true, y_pred))
     
-    return total_loss / total
+    print("ap and auc: ", float(torch.tensor(aps).mean()), float(torch.tensor(aucs).mean()))
+    return total_loss
     # return None
